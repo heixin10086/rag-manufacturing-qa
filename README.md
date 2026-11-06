@@ -1,133 +1,53 @@
-# 制造企业智改数转 · 知识库问答（RAG）
+# 制造企业诊断报告问答（RAG）
 
-把 40 余份企业智改数转诊断报告变成可检索的知识库，用自然语言提问并给出带出处的回答。
+把一堆 Word 格式的诊断报告变成能提问的知识库。
 
-> 起因：实习时参与过制造企业的数字化转型诊断项目，报告一多，想查"哪类企业普遍上了 ERP""某类企业的瓶颈集中在哪个环节"就得一份份翻。于是做了这个检索增强问答系统。
+实习那阵子给几十家制造企业做数字化转型诊断，一家一份报告。写完之后想查点共性，比如哪些企业上了 ERP、普遍卡在哪个环节，只能在文件夹里一份份翻 Word，翻到第三份就想算了。
 
-## 技术链路
+后来拿这批报告做了个检索问答：切块、向量化、存进 Chroma，提问时先检索再让模型组织答案，末尾标出处编号，方便回去核对原文。
 
-```
-docx 报告
-   │  python-docx 解析
-   ▼
-按标题分块（320 字/块，60 字重叠）
-   │  企业名脱敏
-   ▼
-text-embedding-v3 向量化
-   │
-   ▼
-Chroma 持久化（cosine 相似度）
-   │  查询时召回 Top-5
-   ▼
-qwen3.8-flash 生成（强制标注引用编号）
-   │
-   ▼
-Streamlit 前端 / FastAPI 接口
-```
-
-**设计取舍**：不用 LangChain。整条链路不到 200 行，每一环都可控可解释；面试时能讲清楚为什么这样分块、为什么带引用。
-
-## 目录
-
-```
-├── config.py           # 模型、分块、检索参数（全部可由环境变量覆盖）
-├── sanitize.py         # 脱敏：企业名换代号、清理电话邮箱
-├── ingest.py           # 建索引：解析 → 脱敏 → 分块 → 向量化 → 入库
-├── rag.py              # 检索 + 生成（核心链路）
-├── app.py              # Streamlit 前端（创空间入口）
-├── api.py              # FastAPI 接口
-├── eval.py             # 检索命中率评测
-├── data/
-│   ├── raw/            # 原始报告 .docx（不入 git）
-│   ├── company_alias.txt  # 企业名 → 代号
-│   └── eval_set.json   # 评测集
-└── storage/            # Chroma 持久化（不入 git）
-```
-
-## 快速开始
+## 跑起来
 
 ```bash
-# 1. 安装依赖
 pip install -r requirements.txt
+cp .env.example .env          # 填 DASHSCOPE_API_KEY
 
-# 2. 配置密钥
-cp .env.example .env      # 填入 DASHSCOPE_API_KEY
+# 仓库里没有真实报告，用 3 份虚构样例代替
+python scripts/make_samples.py
+cp data/samples/*.docx data/raw/
 
-# 3. 放入语料
-#    把诊断报告 .docx 放进 data/raw/
-
-# 4. 生成脱敏映射表，人工核对
-python sanitize.py --suggest
-python sanitize.py --check     # 确认没有漏网的企业名
-
-# 5. 建索引
-python ingest.py --dry-run     # 先看切块效果
-python ingest.py --rebuild     # 正式建库
-
-# 6. 自测
-python rag.py "哪些企业已经上了 ERP 系统？"
-
-# 7. 起界面
-streamlit run app.py
+python ingest.py --rebuild    # 建索引
+python rag.py "哪些企业已经上了 ERP 系统？"   # 命令行自测
+streamlit run app.py          # 界面
 ```
 
-## 关于数据（重要）
+模型用的是千问（阿里云百炼），OpenAI 兼容接口。换 DeepSeek 或别家只改 `.env` 里的 `base_url` 和模型名。
 
-**本仓库不包含任何真实企业语料。**
+## 几个花时间的地方
 
-真实的 40 余份企业诊断报告是实习期间的工作成果，含企业经营数据与系统架构等敏感信息，
-即使做企业名替换也可能被反推识别，因此不适合公开：
+**分块。** 一开始按固定长度硬切，切出来的块里全是断句，还混进大段「正文使用三号仿宋、页边距 3.2 厘米」这种模板说明——43 份报告每份都有，白占检索名额。
 
-- `data/raw/`、`data/company_alias.txt`、`storage/` 均已加入 `.gitignore`
-- 仓库提供 3 份**完全虚构**的示例报告（`data/samples/`），结构与真实报告一致，内容凭空编造
+后来改成按一级标题切、「（一）（二）」这种二级标题不切；超长部分在句号处断开而不是按字数硬砍；再加一层模板套话过滤。平均块长从 201 字回到 296 字。
 
-想跑通流程：
+**脱敏。** 报告里有企业名、联系人、营收，不能直接入库。企业名换代号、电话邮箱清掉，另外写了 `verify_index.py` 扫一遍索引确认没漏网的——因为光看正文没用，`source`（报告文件名）也是企业名，而且它会被拼进 prompt 一起喂给模型。
 
-```bash
-python scripts/make_samples.py            # 生成虚构样例
-cp data/samples/*.docx data/raw/          # Windows: copy data\samples\*.docx data\raw\
-python ingest.py --rebuild
-streamlit run app.py
-```
+还有个坑：如果先分块再脱敏，企业名会被块边界切成「器（沈阳）有限公司」这种半截，匹配不上。得先脱敏再分块。
 
-**真实语料下的实测规模**（仅规模，不含内容）：43 份报告 → 678 个检索块，
-约 20 万字，平均块长 296 字，全量向量化约 2 分钟。
+**评测。** `eval.py` 是自己出题、标注答案在哪份报告，跑一遍算 Hit@K。一开始只有 3 道题，命中率 100%，但没什么参考价值，因为题面直接把原文关键词写进去了。测检索得用业务语言问，不能抄原文术语。
 
-## 评测
+## 关于数据
 
-自己出 20 个问题，标注标准答案所在的报告文件名，填进 `data/eval_set.json`：
+仓库里没有任何真实企业报告。这些报告是实习期间的工作成果，涉及企业经营数据，就算换了企业名也容易反推出来（「沈阳某日资精密仪器企业，79 人，主营风速仪」——同行一看就知道是谁）。
 
-```json
-[{"question": "哪些企业已部署 ERP？", "expected_source": "企业A-智改数转诊断报告"}]
-```
+`data/raw/`、`data/company_alias.txt`、`storage/` 都在 `.gitignore` 里。
 
-```bash
-python eval.py --top-k 5 --show-miss
-```
+`data/samples/` 下那 3 份是虚构的，企业名、人数、营收、问题描述全是编的，结构和真实报告一致，拿来跑通流程够用。
 
-输出 `Hit@5` 命中率。建议做两组对比写进 README：
+真实语料下的规模：43 份报告，678 个块，约 20 万字。
 
-| 配置 | Hit@5 |
-|---|---|
-| 纯向量检索（chunk=320, overlap=60） | 待填 |
-| 调整分块 + 加大重叠 | 待填 |
-| 加 reranker 重排（bge-reranker-v2-m3） | 待填 |
+## 已知的问题
 
-## 部署到 ModelScope 创空间
-
-1. `modelscope.cn` 注册 → 创建创空间 → SDK 选 **Streamlit**
-2. 上传代码（`app.py` 为入口），**不要上传** `data/raw/` 与 `storage/`
-3. 在创空间设置里添加环境变量 `DASHSCOPE_API_KEY`
-4. 注意：创空间实例不会自动建索引，需先在本地建好再上传 `storage/`，或启动脚本里判断为空时建库
-
-## 已知限制
-
-- 单轮问答，没有做对话历史压缩，多轮追问能力有限
-- 分块按标题切，对没有小标题的报告效果会打折
-- 未做 rerank 时，长文档的相似片段容易挤掉真正相关的那一块
-
-## 后续可做
-
-- 混合检索（BM25 + 向量）提升专有名词召回
-- 引入 bge-reranker 做二阶段重排
-- 答案结构化输出（把"企业 + 环节 + 问题"抽成表格）
+- 单轮问答。多轮追问要自己接上文，没做对话历史压缩。
+- 分块依赖报告有小标题。遇到没分节的文档，切出来的块质量会明显下降。
+- 没接 rerank。长报告里相似的段落多，纯向量检索偶尔会把不那么相关的一块顶上来。
+- 部署到 ModelScope 创空间时，实例不会自动建索引，得本地建好再把 `storage/` 传上去。
