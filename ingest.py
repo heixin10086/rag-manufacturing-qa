@@ -28,7 +28,7 @@ def build_records(files: list[Path], alias: dict[str, str]) -> list[dict]:
     for f in files:
         try:
             # 先脱敏、再分块：若先分块，企业名可能被块边界切断，
-            # 留下一截「器（沈阳）有限公司」这种无法匹配的残片
+            # 留下一截无法匹配的企业名残片
             paras = read_paragraphs(f)
             paras = [(desensitize(text, alias), style) for text, style in paras]
             chunks = split_into_chunks(paras, size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)

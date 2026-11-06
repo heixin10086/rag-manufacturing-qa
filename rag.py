@@ -129,7 +129,7 @@ def answer(query: str, top_k: int | None = None, stream: bool = False):
 
 
 if __name__ == "__main__":
-    # 命令行快速自测：python rag.py "沈阳的精密仪器企业数字化水平如何"
+    # 命令行快速自测：python rag.py "哪些企业已经上了 ERP 系统？"
     import sys
 
     q = " ".join(sys.argv[1:]) or "哪些企业已经上了 ERP 系统？"
