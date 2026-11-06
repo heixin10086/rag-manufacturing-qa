@@ -1,0 +1,19 @@
+# 依赖
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# 真实语料与索引：含企业敏感信息，严禁入库
+data/raw/
+data/company_alias.txt
+storage/
+*.docx
+*.xlsx
+
+# 例外：公开演示用的虚构样例需要入库
+!data/samples/*.docx
+
+# 系统
+.DS_Store
+Thumbs.db

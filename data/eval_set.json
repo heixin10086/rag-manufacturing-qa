@@ -1,0 +1,14 @@
+[
+  {
+    "question": "哪家企业的数字化智能化水平在本次诊断的五家企业中最高？",
+    "expected_source": "企业B-智改数转诊断报告（填写版）"
+  },
+  {
+    "question": "部署了智邦国际ERP、预计数字化等级为L1-L2的企业是哪家？",
+    "expected_source": "企业K-智改数转诊断报告（填写版）"
+  },
+  {
+    "question": "哪家企业建成了ERP+MES+PLM+OA+HRM+CRM的完整系统体系？",
+    "expected_source": "企业Q-智改数转诊断报告（填写版）"
+  }
+]
